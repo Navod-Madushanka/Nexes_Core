@@ -1,54 +1,85 @@
-import ollama
-from modules.inference import heartbeat_warmup
+import sys
+from modules.inference import heartbeat_warmup, chat_inference
 from modules.identity import load_identity
+from modules.ledger_mgr import initialize_ledger, recall_memory, save_summary, consolidate_logs
 
-def run_phase_1_audit():
-    print("=== NEXUS CORE: PHASE 1 AUDIT ===")
-    errors = 0
+def start_system():
+    print("--- NEXUS CORE: PHASE 2 (LEDGER INTEGRATION) ---")
+    
+    # 1. Pre-Flight: Warm-up (FR-01)
+    if not heartbeat_warmup():
+        print("[!] Failed to warm up inference engine.")
+        return
 
-    # Test 1: Ollama & Heartbeat
-    print("\n[1/3] Testing Heartbeat (FR-01)...")
-    if heartbeat_warmup():
-        print("PASS: Model loaded into VRAM.")
+    # 2. Identity & Budget (FR-08, FR-12)
+    persona, token_total = load_identity()
+    
+    # 3. Initialize Ledger (Tier 2)
+    initialize_ledger()
+
+    print(f"Nexus Core: Identity & Ledger Layers initialized.") 
+    print(f"System Budget: {token_total}/500 tokens used.") 
+
+    if token_total <= 500:
+        print("[STATUS]: PRE-FLIGHT CLEAR.") 
     else:
-        print("FAIL: Could not contact Ollama.")
-        errors += 1
+        print("[STATUS]: PRE-FLIGHT WARNING. Overhead exceeds 500 tokens.")
 
-    # Test 2: Identity Injection
-    print("\n[2/3] Testing Identity Injection (FR-08)...")
-    persona, t_count = load_identity()
-    if "ALFRED" in persona and "Navod" in persona:
-        print("PASS: Identity loaded correctly from JSON.")
-    else:
-        print("FAIL: Identity block is missing key profile data.")
-        errors += 1
+    print("\n" + "="*40)
+    print(f"ALFRED: 'Ready for your instructions, Sir. The ledger is active.'")
+    print("="*40)
 
-    # Test 3: Token Budget
-    print("\n[3/3] Testing Token Budget (FR-12)...")
-    print(f"Current Size: {t_count} tokens.")
-    if t_count <= 500:
-        print("PASS: System overhead is within the 500-token limit.")
-    else:
-        print("FAIL: Identity is too large for the System Budget.")
-        errors += 1
+    # Track session for Self-Reflection (FR-09)
+    session_history = ""
 
-    # Final Inference Test
-    if errors == 0:
-        print("\n" + "="*40)
-        print("ALL SYSTEMS NOMINAL. RUNNING LIVE INFERENCE...")
-        print("="*40)
-        
+    while True:
         try:
-            test_query = "ALFRED, confirm status and identify yourself."
-            response = ollama.chat(model='llama3.2', messages=[
-                {'role': 'system', 'content': persona},
-                {'role': 'user', 'content': test_query},
-            ])
-            print(f"\nALFRED: {response['message']['content']}")
-        except Exception as e:
-            print(f"Inference Error: {e}")
-    else:
-        print(f"\nAUDIT FAILED: {errors} error(s) found. Fix before Phase 2.")
+            user_input = input("\nSir: ").strip()
+            
+            if not user_input:
+                continue
+            
+            # EXIT & REFLECTION LOGIC
+            if user_input.lower() in ["/exit", "/quit"]:
+                if session_history:
+                    print("\nALFRED: 'One moment, Sir. Summarizing our discussion for the Ledger...'")
+                    # Ask LLM to summarize the session_history
+                    summary_prompt = "Summarize this conversation into a single concise paragraph for the archives."
+                    summary_text = chat_inference(persona, "", f"History:\n{session_history}\n\nTask: {summary_prompt}")
+                    
+                    save_summary(summary_text)
+                    consolidate_logs() # Trigger FR-04 check
+                
+                print("ALFRED: 'Very good, Sir. Powering down.'")
+                break
+
+            injected_context = ""
+
+            # COMMAND: /recall
+            if user_input.startswith("/recall"):
+                query = user_input.replace("/recall", "").strip()
+                if query:
+                    print(f"[*] Searching Ledger for: '{query}'...")
+                    injected_context = recall_memory(query)
+                    if injected_context:
+                        print("[*] Tier 2 Context Injected.")
+                    else:
+                        print("ALFRED: 'No matching records found, Sir.'")
+                else:
+                    print("ALFRED: 'Please specify keywords for recall, Sir.'")
+                    continue
+
+            # 4. Inference
+            response = chat_inference(persona, injected_context or "", user_input)
+            
+            # Append to history for the end-of-session summary
+            session_history += f"User: {user_input}\nALFRED: {response}\n"
+            
+            print(f"\nALFRED: {response}")
+
+        except KeyboardInterrupt:
+            print("\n[!] Emergency shutdown.")
+            sys.exit()
 
 if __name__ == "__main__":
-    run_phase_1_audit()
+    start_system()
