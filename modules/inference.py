@@ -8,9 +8,10 @@ def heartbeat_warmup():
     print("Nexus Core: Initializing Heartbeat (FR-01)...")
     try:
         ollama.generate(
-            model='llama3.2', 
+            model='llama3.2:latest', 
             prompt='', 
-            keep_alive='1h'
+            keep_alive='1h',
+            options={"num_predict": 1}
         )
         print("Nexus Core: Weights pre-loaded. System Ready.")
         return True
@@ -20,22 +21,20 @@ def heartbeat_warmup():
 
 def chat_inference(persona, context, user_input):
     """
-    Nexus Loop (FR-16) with Hallucination Guard.
-    Explicitly tells the model what is 'Memory' vs 'Current Input'.
+    Nexus Loop (FR-16) - General Purpose Mega-Capacity.
+    Balanced for high-context conversations and long, natural responses.
     """
     
-    # Create a strict boundary for injected memory
+    # Create a subtle boundary for history
     memory_block = ""
     if context:
         memory_block = (
-            "\n[HISTORY_START]\n"
+            "\n[CONVERSATIONAL_CONTEXT]\n"
             f"{context}\n"
-            "[HISTORY_END]\n"
-            "INSTRUCTION: Use the HISTORY block above to answer. If it's empty, "
-            "simply say you don't know yet. Do NOT invent system stats or directories.\n"
+            "[END_OF_CONTEXT]\n"
         )
 
-    # Final prompt structure
+    # Clean, persona-driven prompt structure
     full_prompt = (
         f"{persona}\n"
         f"{memory_block}\n"
@@ -43,14 +42,18 @@ def chat_inference(persona, context, user_input):
         f"ALFRED:"
     )
     
+    # 
+
     response = ollama.generate(
-        model='llama3.2:latest',
+        model='llama3.2',
         prompt=full_prompt,
         options={
-            "num_predict": 200,
-            "temperature": 0.1,  # Lowered to 0.1 to stop the AI from making things up
-            "top_p": 0.9
+            "num_predict": 4096,    # High output limit remains for long explanations
+            "temperature": 0.5,     # Increased to 0.5 for more natural, less "robotic" flow
+            "top_p": 0.9,
+            "repeat_penalty": 1.1,
+            "stop": ["USER:", "ALFRED:"]
         }
     )
     
-    return response['response']
+    return response['response'].strip()
