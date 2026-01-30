@@ -8,6 +8,7 @@ cpu_ef = embedding_functions.SentenceTransformerEmbeddingFunction(
     model_name="mixedbread-ai/mxbai-embed-large-v1",
     device="cpu"
 )
+
 vault = client.get_or_create_collection(
     name="semantic_vault", 
     embedding_function=cpu_ef,
@@ -24,38 +25,48 @@ def expand_query(query):
     for word in query.split():
         for syn in wordnet.synsets(word):
             for lemma in syn.lemmas():
-                # Clean up and add the synonym
                 clean_syn = lemma.name().replace('_', ' ')
                 synonyms.add(clean_syn)
-                # Keep the expansion tight (max 5) to prevent 'Query Drift'
                 if len(synonyms) >= 5: 
                     return " ".join(list(synonyms))
     
     return " ".join(list(synonyms))
 
-def query_vault(user_query, n_results=3):
+def query_vault(user_query):
     """
-    Implements FR-03 (Gatekeeper) and FR-02 (Linguistic Expansion).
+    Final Phase 4 Version: Implements FR-03 (Gatekeeper) and returns 
+    the best matching structured dictionary for FR-16 Orchestration.
     """
     # Step 1: Query Expansion (FR-02)
     search_query = expand_query(user_query)
-    print(f"[*] Expanded Search Terms: {search_query}")
-
-    # Step 2: Semantic Search
+    
+    # Step 2: Semantic Search (Requesting 1 best match for the orchestrator)
     results = vault.query(
         query_texts=[search_query],
-        n_results=n_results
+        n_results=1
     )
 
     # Step 3: Gatekeeper Logic (FR-03)
-    valid_context = []
     if results['distances'] and len(results['distances'][0]) > 0:
-        for i, distance in enumerate(results['distances'][0]):
-            if distance <= 0.5: # 0.5 Threshold Gatekeeper
-                content = results['documents'][0][i]
-                meta = results['metadatas'][0][i]
-                valid_context.append(f"[{meta.get('source_origin', 'VAULT')}]: {content}")
-            else:
-                print(f"[GATEKEEPER] Aborted result {i} - Distance {distance:.4f} > 0.5")
+        distance = results['distances'][0][0]
+        
+        # 0.5 Threshold Gatekeeper: Prevents Hallucinations
+        if distance <= 0.5:
+            content = results['documents'][0][0]
+            meta = results['metadatas'][0][0]
+            
+            # FR-16: Force the timestamp to a float for easier comparison
+            # Default to 0.0 (Unix Epoch) if missing
+            raw_ts = meta.get("timestamp", 0)
+            
+            # Return the dictionary format main.py is waiting for
+            return {
+                "content": content,
+                "timestamp": float(raw_ts), 
+                "source": f"Tier 3 Vault ({meta.get('source_origin', 'Unknown')})",
+                "distance": distance
+            }
+        else:
+            print(f"[*] Gatekeeper: Best vault match too weak ({distance:.4f} > 0.5). Ignoring.")
 
-    return "\n".join(valid_context) if valid_context else "No relevant info found in Vault."
+    return None # Returns None if nothing is relevant
