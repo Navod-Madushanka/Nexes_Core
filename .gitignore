@@ -1,0 +1,25 @@
+# Created by venv; see https://docs.python.org/3/library/venv.html
+# Python - Environment & Bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+.env
+
+# Nexus Core - Local AI Models & Data
+# We ignore the DB and user profile to keep your private info off Git
+data/*.db
+data/*.db-wal
+data/*.db-shm
+data/user_profile.json
+
+# If you create an ingestion folder for documents (Tier 3)
+docs/
+
+# Logs & OS specifics
+*.log
+.DS_Store
+Thumbs.db
+
