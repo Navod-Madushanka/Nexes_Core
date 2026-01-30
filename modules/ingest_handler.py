@@ -6,7 +6,20 @@ import pytesseract
 from tqdm import tqdm # Required for FR-15 TUI Progress Bar
 from modules.vault_engine import vault # Tier 3 ChromaDB collection
 
+# --- CONFIGURATION ---
 DOCS_DIR = os.path.join("data", "docs")
+
+# Chocolatey/System Tesseract Path Configuration
+tess_path = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
+
+if os.path.exists(tess_path):
+    pytesseract.pytesseract.tesseract_cmd = tess_path
+else:
+    # Fallback if your Choco path differs
+    print("[!] Tesseract execution engine not found at default path.")
+    # Note: If Tesseract isn't in your System PATH, OCR will fail later.
+
+# --- UTILITIES ---
 
 def get_file_hash(file_path):
     """FR-13: Generate SHA256 hash for de-duplication."""
@@ -31,9 +44,12 @@ def process_file(file_name):
     # FR-10: Multi-Modal Ingestion (OCR for Images)
     if file_name.lower().endswith(('.png', '.jpg', '.jpeg')):
         try:
-            content = pytesseract.image_to_string(Image.open(path))
+            # Added Image.open inside a 'with' statement for better resource handling
+            with Image.open(path) as img:
+                content = pytesseract.image_to_string(img)
         except Exception as e:
             print(f"\n[!] OCR Error on {file_name}: {e}")
+            
     # Standard Text Ingestion
     elif file_name.lower().endswith('.txt'):
         with open(path, 'r', encoding='utf-8') as f:
@@ -80,3 +96,6 @@ def sync_docs_folder():
             continue 
     
     print("[*] Ingestion Cycle Complete.")
+
+if __name__ == "__main__":
+    sync_docs_folder()
